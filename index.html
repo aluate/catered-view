@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#14110f">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Kitchen</title>
+<style>
+html,body{margin:0;background:#14110f;color:#f4ede6;font:18px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+main{max-width:420px;margin:18vh auto 0;padding:0 20px}
+h1{font-size:28px;margin:0 0 6px}p{color:#a99b8f;margin:0 0 18px;font-size:15px}
+input{width:100%;box-sizing:border-box;font-size:20px;padding:14px;border-radius:12px;border:1px solid #352d28;background:#1f1a17;color:#f4ede6}
+button{width:100%;margin-top:12px;font-size:19px;padding:14px;border:0;border-radius:12px;background:#ef8a4c;color:#1a0f08;font-weight:700;cursor:pointer}
+#msg{color:#ff8a80;min-height:24px;margin-top:10px;font-size:15px}
+</style>
+</head>
+<body>
+<main>
+  <h1>🦃 Kitchen</h1>
+  <p>Family only. Type the password once; this phone remembers it.</p>
+  <form id="f"><input id="pw" type="password" autocomplete="current-password" placeholder="Password" autofocus><button>Open</button></form>
+  <div id="msg"></div>
+</main>
+<script>
+/* Everything behind this page is encrypted (AES-256-GCM, key from the password by PBKDF2-SHA256).
+   The salt below is not a secret. Built by side\catered\tools\build_view.py. */
+(function () {
+  const SALT = 'svzLECmue6bELXuJhtGxdA==', ITER = 250000, KEEP = 'catered-view-key';
+  const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+  const un64 = a => btoa(String.fromCharCode.apply(null, a));
+  async function keyFrom(pw) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
+    return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(SALT), iterations: ITER }, base, 256));
+  }
+  async function open(raw) {
+    const k = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
+    const txt = (await (await fetch('data.enc?' + Date.now(), { cache: 'no-store' })).text()).trim();
+    const all = b64(txt);
+    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, k, all.slice(12));
+    const html = new TextDecoder().decode(plain);
+    document.open(); document.write(html); document.close();
+  }
+  const kept = (() => { try { return JSON.parse(localStorage.getItem(KEEP) || 'null'); } catch (e) { return null; } })();
+  if (kept && kept.salt === SALT) open(b64(kept.key)).catch(() => { try { localStorage.removeItem(KEEP); } catch (e) {} document.getElementById('msg').textContent = 'The password changed. Type the new one.'; });
+  document.getElementById('f').onsubmit = async e => {
+    e.preventDefault();
+    const msg = document.getElementById('msg'); msg.textContent = 'Opening…';
+    try {
+      const raw = await keyFrom(document.getElementById('pw').value);
+      await open(raw);
+      try { localStorage.setItem(KEEP, JSON.stringify({ salt: SALT, key: un64(raw) })); } catch (x) {}
+    } catch (x) { msg.textContent = "That's not it. Try again."; }
+  };
+})();
+</script>
+</body>
+</html>

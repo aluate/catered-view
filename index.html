@@ -46,12 +46,12 @@ button{width:100%;margin-top:12px;font-size:19px;padding:14px;border:0;border-ra
   if (kept && kept.salt === SALT) open(b64(kept.key)).catch(() => { try { localStorage.removeItem(KEEP); } catch (e) {} document.getElementById('msg').textContent = 'The password changed. Type the new one.'; });
   document.getElementById('f').onsubmit = async e => {
     e.preventDefault();
-    const msg = document.getElementById('msg'); msg.textContent = 'Opening…';
+    const msg = document.getElementById('msg'); msg.style.color = '#a99b8f'; msg.textContent = ['Checking the guest list…', 'Warming up the pass…', 'Counting turkeys…'][Math.floor(Math.random() * 3)];
     try {
       const raw = await keyFrom(document.getElementById('pw').value);
       await open(raw);
       try { localStorage.setItem(KEEP, JSON.stringify({ salt: SALT, key: un64(raw) })); } catch (x) {}
-    } catch (x) { msg.textContent = "That's not it. Try again."; }
+    } catch (x) { msg.style.color = '#ff8a80'; msg.textContent = ["That's not it. Try again.", 'Wrong password. Are you even on the guest list?', "Nope. Ask Karl, and don't tell him I sent you."][Math.floor(Math.random() * 3)]; }
   };
 })();
 </script>

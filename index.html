@@ -34,16 +34,39 @@ button{width:100%;margin-top:12px;font-size:19px;padding:14px;border:0;border-ra
     const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveBits']);
     return new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: b64(SALT), iterations: ITER }, base, 256));
   }
+  // A failed load is not a wrong password. Only a decrypt that fails on a good download means the key is wrong;
+  // a network blip or GitHub swapping files mid-publish must never sign anyone out.
   async function open(raw) {
     const k = await crypto.subtle.importKey('raw', raw, 'AES-GCM', false, ['decrypt']);
-    const txt = (await (await fetch('data.enc?' + Date.now(), { cache: 'no-store' })).text()).trim();
-    const all = b64(txt);
-    const plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, k, all.slice(12));
+    let all;
+    try {
+      const r = await fetch('data.enc?' + Date.now(), { cache: 'no-store' });
+      if (!r.ok) throw new Error('status ' + r.status);
+      all = b64((await r.text()).trim());
+      if (all.length < 29) throw new Error('short');
+    } catch (e) { throw { soft: true }; }
+    let plain;
+    try { plain = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: all.slice(0, 12) }, k, all.slice(12)); }
+    catch (e) { throw { hard: true }; }
     const html = new TextDecoder().decode(plain);
     document.open(); document.write(html); document.close();
   }
+  const say = (t, c) => { const m = document.getElementById('msg'); m.style.color = c || '#a99b8f'; m.textContent = t; };
   const kept = (() => { try { return JSON.parse(localStorage.getItem(KEEP) || 'null'); } catch (e) { return null; } })();
-  if (kept && kept.salt === SALT) open(b64(kept.key)).catch(() => { try { localStorage.removeItem(KEEP); } catch (e) {} document.getElementById('msg').textContent = 'The password changed. Type the new one.'; });
+  function tryKept(n) {
+    open(b64(kept.key)).catch(e => {
+      if (e && e.hard && n >= 2) {  // three clean downloads that won't open: the password really changed
+        try { localStorage.removeItem(KEEP); } catch (x) {}
+        say('The password changed. Type the new one.', '#ff8a80');
+      } else if (n < 6) {
+        say('Loading… (the page may be updating, one moment)');
+        setTimeout(() => tryKept(n + 1), 2500 + n * 1500);
+      } else {
+        say("Can't reach the page right now. Pull down to try again; you're still signed in.", '#ff8a80');
+      }
+    });
+  }
+  if (kept && kept.salt === SALT) tryKept(0);
   document.getElementById('f').onsubmit = async e => {
     e.preventDefault();
     const msg = document.getElementById('msg'); msg.style.color = '#a99b8f'; msg.textContent = ['Checking the guest list…', 'Warming up the pass…', 'Counting turkeys…'][Math.floor(Math.random() * 3)];
@@ -51,7 +74,9 @@ button{width:100%;margin-top:12px;font-size:19px;padding:14px;border:0;border-ra
       const raw = await keyFrom(document.getElementById('pw').value);
       await open(raw);
       try { localStorage.setItem(KEEP, JSON.stringify({ salt: SALT, key: un64(raw) })); } catch (x) {}
-    } catch (x) { msg.style.color = '#ff8a80'; msg.textContent = ["That's not it. Try again.", 'Wrong password. Are you even on the guest list?', "Nope. Ask Karl, and don't tell him I sent you."][Math.floor(Math.random() * 3)]; }
+    } catch (x) {
+      if (x && x.soft) { say("Couldn't reach the page just now. Tap Open again.", '#ff8a80'); return; }
+      msg.style.color = '#ff8a80'; msg.textContent = ["That's not it. Try again.", 'Wrong password. Are you even on the guest list?', "Nope. Ask Karl, and don't tell him I sent you."][Math.floor(Math.random() * 3)]; }
   };
 })();
 </script>
